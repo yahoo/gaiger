@@ -1,0 +1,13 @@
+# Copyright Yahoo, Licensed under the terms of the Apache 2.0 license. See LICENSE for terms.
+#
+# Maintainers who review changes. The later, more specific lines name the
+# security-critical paths explicitly so they stay owned if the default changes.
+*                          @shubhankarunhale
+/app/write_authz.py        @shubhankarunhale
+/app/write_proposals.py    @shubhankarunhale
+/app/egress_*.py           @shubhankarunhale
+/app/audit.py              @shubhankarunhale
+/k8s/                      @shubhankarunhale
+/.github/                  @shubhankarunhale
+/Dockerfile                @shubhankarunhale
+/requirements*             @shubhankarunhale

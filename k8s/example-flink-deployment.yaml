@@ -1,0 +1,199 @@
+# Copyright Yahoo, Licensed under the terms of the Apache 2.0 license. See LICENSE for terms.
+#
+# Example FlinkDeployment with Gaiger added as a sidecar to the
+# JobManager pod. Replace placeholders before applying:
+#
+#   <your-namespace>            namespace your Flink jobs run in
+#   <your-image-registry>       your container image registry
+#   <your-flink-image-tag>      tag of the upstream Flink image you use
+#   <your-debugger-image-tag>   tag of the gaiger image you built
+#
+# Secrets are read from the Kubernetes Secret `flink-ai-debugger-secrets`
+# (SECRET_PROVIDER=env). Only `anthropic-api-key` is required; every other key
+# is optional and unlocks one integration when present:
+#
+#   anthropic-api-key   required — Anthropic API key for the LangGraph agent
+#   github-token        optional — enables read-source / create-PR tools
+#   slack-bot-token     optional — enables Slack notifications
+#   grafana-sa-token    optional — enables Grafana alert polling
+#
+# RBAC: apply k8s/rbac.yaml first. It creates this deployment's own
+# ServiceAccount (example-flink-job): reads for the sidecar, and as its only
+# writes a `patch` on this FlinkDeployment (and its Deployment) by name. The
+# Flink job code in the same pod holds that account too. Never run the sidecar
+# under the Flink operator's ServiceAccount.
+#
+# Kill switch: apply k8s/flink-ai-debugger-kill-switch-configmap.yaml first.
+# The volume below is optional, so a missing ConfigMap never blocks startup,
+# but then the switch is not operable for this pod.
+
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: example-flink-job
+  namespace: <your-namespace>
+spec:
+  image: <your-image-registry>/flink:<your-flink-image-tag>
+  flinkVersion: v1_18
+  flinkConfiguration:
+    taskmanager.numberOfTaskSlots: "2"
+    # Durable savepoint location. A live remediation waits for its savepoint
+    # to COMPLETE before patching and stops if it fails; without this the
+    # savepoint (and so the remediation) fails.
+    state.savepoints.dir: <your-durable-savepoint-uri>   # e.g. s3://bucket/savepoints
+  serviceAccount: example-flink-job
+  jobManager:
+    resource:
+      memory: "2048m"
+      cpu: 1
+    podTemplate:
+      spec:
+        volumes:
+          # Runtime kill switch (docs/AI_INCIDENT_RESPONSE.md). Whole-volume
+          # mount, never subPath: subPath mounts never receive updates.
+          - name: ai-debugger-kill-switch
+            configMap:
+              name: flink-ai-debugger-kill-switch
+              optional: true
+          # Writable scratch space; the root filesystem is read-only.
+          - name: tmp
+            emptyDir: {}
+        containers:
+          - name: flink-main-container
+            # Upstream Flink JobManager — defined by the operator.
+          - name: ai-debugger-sidecar
+            image: <your-image-registry>/gaiger:<your-debugger-image-tag>
+            volumeMounts:
+              - name: ai-debugger-kill-switch
+                mountPath: /etc/flink-ai-debugger
+                readOnly: true
+              - name: tmp
+                mountPath: /tmp
+            ports:
+              - containerPort: 8765
+                name: debugger
+            # Liveness is process-only (/api/health never touches Flink,
+            # Kubernetes or Postgres); readiness uses /api/ready, which reports
+            # dependency status with bounded checks. The image has no curl, so the
+            # probes use the same Python one-liner as the Dockerfile HEALTHCHECK.
+            # timeoutSeconds MUST be set: the kubelet kills an exec probe at
+            # timeoutSeconds (default 1s), before the in-command timeout applies.
+            livenessProbe:
+              exec:
+                command: ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=5).status == 200 else 1)"]
+              initialDelaySeconds: 30
+              periodSeconds: 30
+              timeoutSeconds: 6
+              failureThreshold: 3
+            readinessProbe:
+              exec:
+                command: ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/api/ready', timeout=5).status == 200 else 1)"]
+              initialDelaySeconds: 15
+              periodSeconds: 10
+              timeoutSeconds: 6
+              failureThreshold: 3
+            env:
+              # --- Core ---------------------------------------------------
+              - name: SECRET_PROVIDER
+                value: env
+              - name: ANTHROPIC_API_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: flink-ai-debugger-secrets
+                    key: anthropic-api-key
+              # Environment label. Write tools can be enabled only when this
+              # positively names a non-production environment (`nonprod`,
+              # `dev`, `test`, `staging`). `prod`/`production` or any
+              # unrecognised value force-disables them regardless of
+              # ENABLE_WRITE_TOOLS (fail closed).
+              - name: DEPLOY_ENV
+                value: "<set-me>"   # e.g. nonprod; anything unrecognised keeps writes off
+              # Opt-in for cluster-mutating tools (restart, config patch,
+              # remediation, PR creation). Keep "false" unless you have
+              # evaluated the agent's behaviour on this job.
+              - name: ENABLE_WRITE_TOOLS
+                value: "false"
+              # Serve the UI under a path prefix when fronted by a proxy
+              # (e.g. "/chat"). Leave empty when served at the root.
+              - name: ROOT_PATH
+                value: ""
+              # Set to "true" only if you run the optional autoscaler-state
+              # PostgreSQL integration (POSTGRES_HOST/DB/USER/PASSWORD).
+              - name: POSTGRES_ENABLED
+                value: "false"
+
+              # --- Pod identity (used for scoping K8s reads) ---------------
+              - name: POD_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
+              - name: POD_NAMESPACE
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.namespace
+              # Must match metadata.name of this FlinkDeployment.
+              - name: FLINK_DEPLOYMENT_NAME
+                value: example-flink-job
+
+              # --- Audit --------------------------------------------------
+              # Number of proxies in front of this pod that append to
+              # X-Forwarded-For. The audit log takes the client IP this many
+              # hops from the right so client-spoofed entries are ignored.
+              - name: AUDIT_TRUSTED_PROXY_HOPS
+                value: "1"
+
+              # --- GitHub (optional; source reads + PR creation) ----------
+              - name: GITHUB_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: flink-ai-debugger-secrets
+                    key: github-token
+                    optional: true
+              # Fixed by the operator; the agent cannot pick another repo.
+              - name: TARGET_REPO
+                value: <your-org>/<your-flink-job-repo>
+              # Only needed for GitHub Enterprise; defaults to github.com.
+              - name: GITHUB_API_BASE
+                value: https://api.github.com
+
+              # --- Slack (optional) ---------------------------------------
+              - name: SLACK_BOT_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: flink-ai-debugger-secrets
+                    key: slack-bot-token
+                    optional: true
+
+              # --- Grafana alert polling (optional) -----------------------
+              - name: GRAFANA_SA_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: flink-ai-debugger-secrets
+                    key: grafana-sa-token
+                    optional: true
+              - name: GRAFANA_URL
+                value: https://<your-grafana-host>
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
+  taskManager:
+    resource:
+      memory: "2048m"
+      cpu: 1
+  job:
+    jarURI: local:///opt/flink/examples/streaming/StateMachineExample.jar
+    parallelism: 2
+    upgradeMode: stateless

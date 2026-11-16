@@ -1,0 +1,138 @@
+# Copyright Yahoo, Licensed under the terms of the Apache 2.0 license. See LICENSE for terms.
+
+# RBAC for the Gaiger sidecar of ONE FlinkDeployment (the example's
+# `example-flink-job`). Repeat the ServiceAccount, Role and bindings per
+# FlinkDeployment, with the names changed.
+#
+# The JobManager pod runs under its own ServiceAccount, `example-flink-job`
+# (k8s/example-flink-deployment.yaml sets spec.serviceAccount). Every container
+# in the pod holds it: the Gaiger sidecar AND the Flink job code. So:
+#
+#   * `flink-ai-debugger-role` grants READS only (pods, pod logs, events,
+#     deployments, flinkdeployments). Do NOT add write verbs to it.
+#   * `example-flink-job-writes` is the only write: `patch` on this
+#     FlinkDeployment and its Deployment, by resourceNames. The sidecar's
+#     update_flink_config / apply_remediation / restart_flink_job need exactly
+#     this, and only when ENABLE_WRITE_TOOLS=true passes the in-app write gate.
+#     Delete this Role and its binding to make the sidecar read-only at the
+#     Kubernetes level too.
+#   * The JobManager also needs what your Flink operator installation grants
+#     to job pods (it manages TaskManager pods and config maps). Bind this
+#     account to that Role below; the name `flink` is the operator Helm chart's
+#     default job Role. That grant is shared with the Flink job code.
+#
+# NEVER run the sidecar under the Flink operator's own ServiceAccount: it can
+# create, patch and delete every FlinkDeployment in the namespace, and
+# Kubernetes would then never limit what the sidecar can change.
+#
+# THE NAMESPACE IS THE REAL SECURITY BOUNDARY. The operator's job Role (bound
+# below) lets the pod create pods, which it needs for TaskManagers and which
+# cannot be limited by name. A pod it creates can name ANY ServiceAccount in the
+# same namespace and act with that account's rights. So run these
+# FlinkDeployments in a namespace that holds no more powerful ServiceAccount
+# (keep the Flink operator's own account in another namespace), and treat every
+# job in the namespace as able to act as any account there.
+#
+# Replace <your-namespace> with the namespace your FlinkDeployments run in.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: example-flink-job
+  namespace: <your-namespace>
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: flink-ai-debugger-role
+  namespace: <your-namespace>
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+  - apiGroups: ["flink.apache.org"]
+    resources: ["flinkdeployments"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: flink-ai-debugger-binding
+  namespace: <your-namespace>
+subjects:
+  - kind: ServiceAccount
+    name: example-flink-job
+    namespace: <your-namespace>
+roleRef:
+  kind: Role
+  name: flink-ai-debugger-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: example-flink-job-writes
+  namespace: <your-namespace>
+rules:
+  - apiGroups: ["flink.apache.org"]
+    resources: ["flinkdeployments"]
+    resourceNames: ["example-flink-job"]
+    verbs: ["patch"]
+  # Only for restart_flink_job; remove if you do not use it.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["example-flink-job"]
+    verbs: ["patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: example-flink-job-writes
+  namespace: <your-namespace>
+subjects:
+  - kind: ServiceAccount
+    name: example-flink-job
+    namespace: <your-namespace>
+roleRef:
+  kind: Role
+  name: example-flink-job-writes
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# The JobManager's own needs (TaskManager pods, config maps), as granted to
+# job pods by your Flink operator installation. Shared with the job code.
+# This includes pod creation, so the namespace is the boundary (see top).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: example-flink-job-flink
+  namespace: <your-namespace>
+subjects:
+  - kind: ServiceAccount
+    name: example-flink-job
+    namespace: <your-namespace>
+roleRef:
+  kind: Role
+  name: flink   # rename to the job Role of your operator installation
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Database init -- run this manually or via a K8s Job against your PostgreSQL instance
+# to create both autoscaler tables if they don't already exist
+#
+# Use the SQL setup script: POSTGRES_TABLE_SETUP.sql
+#
+# PGSSLMODE=verify-full psql -h <POSTGRES_HOST> -U <POSTGRES_ADMIN_USER> -d flink_autoscaler -f POSTGRES_TABLE_SETUP.sql
+# (host and an appropriately-privileged DDL role come from your secret store, never from
+#  repo docs. Precondition: a SELECT-only database role for the debugger must be created
+#  BEFORE POSTGRES_ENABLED=true is set on any deployment.)
+#
+# Tables created:
+# - t_flink_autoscaler_state_store (state + metrics + decisions)
+# - t_flink_autoscaler_event_handler (ScalingReport, Warning, AutoscalerError events)

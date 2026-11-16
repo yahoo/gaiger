@@ -1,0 +1,46 @@
+# Copyright Yahoo, Licensed under the terms of the Apache 2.0 license. See LICENSE for terms.
+#
+# Example egress NetworkPolicy for the pods of k8s/example-flink-deployment.yaml.
+# The sidecar's own egress allowlist (EGRESS_ALLOWED_HOSTS) is an in-process
+# control; this policy is the network-level limit underneath it. It applies to
+# the whole pod (the Flink job code too), so it must also allow what the job
+# itself needs.
+#
+# Requires a CNI that enforces NetworkPolicy. The Flink operator labels the
+# job's pods app: <FlinkDeployment name>. Replace each <...> with your CIDRs:
+#
+#   <kubernetes-api-cidr>                 the API server (kubectl get endpoints kubernetes)
+#   <egress-proxy-or-model-api-cidr>      your egress proxy, or the model API endpoint
+#   <checkpoint-and-job-io-cidr>          checkpoint/savepoint storage, sources and sinks
+#
+# Add rules for Slack, GitHub and Grafana only if you enable those integrations.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: example-flink-job-egress
+  namespace: <your-namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app: example-flink-job
+  policyTypes: ["Egress"]
+  egress:
+    - to:                                   # DNS
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:                                   # JobManager <-> TaskManagers
+        - podSelector:
+            matchLabels:
+              app: example-flink-job
+    - to:                                   # Kubernetes API, model API / egress proxy,
+        - ipBlock: {cidr: <kubernetes-api-cidr>}             # checkpoint storage, sources and sinks
+        - ipBlock: {cidr: <egress-proxy-or-model-api-cidr>}
+        - ipBlock: {cidr: <checkpoint-and-job-io-cidr>}
+      ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 6443}

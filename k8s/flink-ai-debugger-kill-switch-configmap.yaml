@@ -1,0 +1,56 @@
+# Runtime kill switch for the Gaiger sidecar (docs/AI_INCIDENT_RESPONSE.md).
+#
+# Mounted as a plain ConfigMap volume (NOT subPath — subPath mounts never
+# receive updates) at /etc/flink-ai-debugger in the ai-debugger-sidecar.
+# The kubelet propagates edits to a mounted ConfigMap in place, so flipping
+# the value below stops the autonomous path of a RUNNING sidecar without a
+# restart — unlike an environment variable, which is immutable for the
+# container's lifetime.
+#
+# Engage (containment):
+#   kubectl -n <namespace> patch configmap flink-ai-debugger-kill-switch \
+#     --type merge -p '{"data":{"kill-switch":"true"}}'
+# Release:
+#   kubectl -n <namespace> patch configmap flink-ai-debugger-kill-switch \
+#     --type merge -p '{"data":{"kill-switch":"false"}}'
+#
+# Accepted engage values: exactly "1", "true", or "halt" (case-insensitive).
+# ANY other value (on/yes/engaged/stop/...) means RELEASED — use the commands
+# above verbatim.
+#
+# Effect while engaged (within one kubelet sync interval, ~1 min):
+#   - Grafana alert poller idles (no new LLM invocations); Slack posts suppressed
+#   - All write tools and the REST remediation endpoints refuse (403 / halted error)
+#   - GitHub source reads (list_github_files / read_github_file) stop too
+#   - Read-only chat, /api/health, and /api/remediation/history stay available
+#   - The process does NOT restart, so in-memory remediation history survives
+#   - An analysis already in flight completes read-only steps only (writes and
+#     Slack refused); hard-stop requires suspend/delete (see the runbook)
+#
+# Apply this ConfigMap BEFORE the FlinkDeployment (platform convention). The
+# sidecar volume declares it optional and the app fails OPEN when the file is
+# absent, so a missing ConfigMap never blocks pod startup — it only means the
+# kill switch is not operable for that pod.
+#
+# BLAST RADIUS — this is the NAMESPACE-WIDE switch: every sidecar in the
+# namespace whose volume names this ConfigMap halts together when it is
+# engaged. A per-deployment switch (a ConfigMap named <deployment>-kill-switch
+# with the same `kill-switch` key, one per job) narrows the blast radius to
+# one FlinkDeployment; the app reads the same file path either way
+# (AGENT_KILL_SWITCH_FILE), so nothing in the sidecar changes.
+# See the scope table in docs/AI_INCIDENT_RESPONSE.md.
+#
+# Use `data`, never `binaryData`: a value that is not valid UTF-8 is treated
+# as unreadable (switch fails open, logged once).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flink-ai-debugger-kill-switch
+  namespace: <your-namespace>
+  labels:
+    # Lets a responder find every kill switch in the namespace with one
+    # selector (namespace-wide and per-deployment alike).
+    app: flink-ai-debugger-kill-switch
+    scope: namespace
+data:
+  kill-switch: "false"

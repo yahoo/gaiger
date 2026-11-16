@@ -1,0 +1,37 @@
+# gitleaks configuration for the secret-scan CI job (.github/workflows/ci.yml).
+#
+# The default rule set stays in force. The allowlist below is deliberately narrow:
+# it names the exact FAKE secret-shaped strings that tests/test_pr_arg_validation.py
+# and tests/test_audit.py feed to the application's own secret-pattern redaction
+# and PR-content gates (the tests exist to prove those strings are refused or
+# masked). Nothing here allowlists a path or a rule wholesale, so a real
+# credential anywhere in the tree, including in those test files, still fails
+# the scan.
+
+title = "gaiger"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Secret-shaped test fixtures (fake values, documented as such in the tests)"
+regexTarget = "match"
+regexes = [
+  # Fake AWS access key id / the AWS documentation example secret key
+  '''AKIAABCDEFGHIJKLMNOP''',
+  '''wJalrXUtnFEMI/K7MDENG''',
+  # Fake Slack bot token shapes
+  '''xoxb-1234567890-abcdef''',
+  '''xoxb-12345678-abc''',
+  # Fake bearer token in an audit-redaction fixture
+  '''opaque0123456789abcdef''',
+  # Truncated PEM headers (no key material follows)
+  '''-----BEGIN RSA PRIVATE KEY-----\\nMIIE\.\.\.''',
+  '''-----BEGIN PGP PRIVATE KEY BLOCK-----\\nlQ\.\.\.''',
+]
+
+[[allowlists]]
+description = "Byte-compiled test modules carry the same fixtures"
+paths = [
+  '''(^|/)__pycache__/''',
+]

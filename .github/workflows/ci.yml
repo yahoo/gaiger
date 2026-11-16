@@ -1,0 +1,200 @@
+# Copyright Yahoo, Licensed under the terms of the Apache 2.0 license. See LICENSE for terms.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege: no workflow-scope grant; each job declares exactly what it needs
+# (read-only checkout). Third-party actions are pinned to full commit SHAs and
+# Dependabot's github-actions ecosystem advances the pins.
+permissions: {}
+
+# One run per ref; a newer push to a pull request cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Developer Certificate of Origin: every commit in a pull request must carry a
+  # Signed-off-by trailer (git commit -s), as CONTRIBUTING.md requires.
+  dco:
+    name: DCO
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require Signed-off-by on every commit
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          fail=0
+          for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            git log -1 --format=%B "$c" | grep -q '^Signed-off-by: ' || { echo "missing sign-off: $c"; fail=1; }
+          done
+          exit "$fail"
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # The same hash-pinned set the image installs, plus the test-only tools.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes -r requirements.lock
+          pip install -r requirements-dev.txt
+
+      - name: Test
+        env:
+          SECRET_PROVIDER: env
+          ANTHROPIC_API_KEY: dummy
+        run: python -m pytest tests/ -q
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    # The gitleaks binary is fetched straight from the gitleaks release, not via
+    # gitleaks/gitleaks-action: the action demands a GITLEAKS_LICENSE secret for
+    # organisation-owned repositories, whereas the CLI itself is MIT-licensed and
+    # needs none. Both the version and the tarball's sha256 are hard-coded below
+    # so the pin is auditable; bump them together.
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      # sha256 of gitleaks_8.30.1_linux_x64.tar.gz, as published in
+      # gitleaks_8.30.1_checksums.txt on the v8.30.1 release page.
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          # Full history is kept so switching to history mode (drop --no-git
+          # below) is a one-flag change; for the public repo it is a single
+          # orphan commit anyway.
+          fetch-depth: 0
+
+      - name: Download gitleaks
+        run: |
+          set -euo pipefail
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL --retry 3 -o "$tarball" "${base}/${tarball}"
+          curl -sSfL --retry 3 -o checksums.txt "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          # Two independent checks: the checksum pinned in this file, and the
+          # checksums file published alongside the release.
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          sha256sum -c --ignore-missing checksums.txt
+          tar -xzf "$tarball" gitleaks
+          ./gitleaks version
+
+      # Scans the checked-out tree (--no-git), i.e. exactly what ships. History
+      # mode is deliberately off: the internal repository's history carries
+      # test-fixture strings (fake AWS/JWT/API keys in tests/) and a long-gone
+      # k8s placeholder manifest that trip the default rules, none of which are
+      # in the tree. The public repository is a single orphan commit, so for it
+      # tree and history are the same thing. Exit code 1 on any finding, which
+      # fails the job and (via needs:) blocks the image build; secrets are
+      # redacted from the log.
+      - name: Run gitleaks
+        run: ./gitleaks detect --source . --no-git --no-banner --redact --exit-code 1
+
+  dependency-review:
+    name: Dependency review
+    # Only meaningful on pull requests (it diffs the dependency graph against the
+    # base branch); on push it is skipped and docker-build still runs.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never
+
+  config-scan:
+    name: Config scan
+    # Misconfiguration scan of the Dockerfile and Kubernetes manifests; any HIGH
+    # or CRITICAL finding fails the job and blocks the image build.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+  docker-build:
+    name: Docker build
+    # A failing test suite, a detected secret, a vulnerable dependency change or a
+    # HIGH/CRITICAL config finding must block the image build. dependency-review
+    # is skipped on push events, so run unless a needed job failed or was
+    # cancelled (a skipped dependency-review does not block).
+    needs: [test, secret-scan, dependency-review, config-scan]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Build image
+        run: docker build -t gaiger:ci .
+      # Vulnerable packages inside the built image (OS and Python). Fails on a
+      # HIGH or CRITICAL finding that has a fixed version available.
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: gaiger:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: App imports in the image
+        run: docker run --rm --entrypoint python gaiger:ci -c "import app.main"

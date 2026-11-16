@@ -1,0 +1,1312 @@
+<!-- Copyright Yahoo, Licensed under the terms of the Apache 2.0 license. See LICENSE for terms. -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>
+  // Dynamically set <base href> so relative URLs (api/*, favicon.png) resolve
+  // correctly regardless of the deployment subpath (e.g. /my-app/chat/).
+  (function() {
+    // Collapse leading slashes: a pathname starting with // would make the
+    // base href protocol-relative, retargeting every relative fetch to
+    // another host.
+    var path = window.location.pathname.replace(/^\/+/, '/');
+    // Ensure trailing slash so relative URLs resolve from this directory
+    var base = path.endsWith('/') ? path : path + '/';
+    var el = document.createElement('base');
+    el.setAttribute('href', base);
+    document.head.appendChild(el);
+  })();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'">
+<title>Gaiger</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+    --primary: #6366F1;
+    --primary-light: #818CF8;
+    --primary-dark: #4F46E5;
+    --accent: #F59E0B;
+    --success: #10B981;
+    --success-light: #D1FAE5;
+    --warning: #F59E0B;
+    --warning-light: #FEF3C7;
+    --danger: #EF4444;
+    --danger-light: #FEE2E2;
+    --text: #1E293B;
+    --text-secondary: #64748B;
+    --text-muted: #94A3B8;
+    --bg: #F1F5F9;
+    --bg-chat: #F8FAFC;
+    --card: #FFFFFF;
+    --border: #E2E8F0;
+    --border-light: #F1F5F9;
+    --code-bg: #F8FAFC;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
+    --radius: 12px;
+    --radius-lg: 16px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+.header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    box-shadow: var(--shadow-sm);
+    z-index: 10;
+}
+.header-left { display: flex; align-items: center; gap: 12px; }
+.header-logo {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 14px;
+}
+.header h1 { font-size: 16px; font-weight: 600; color: var(--text); }
+.header h1 span { color: var(--text-muted); font-weight: 400; }
+.header-right { display: flex; align-items: center; gap: 10px; }
+.status-pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 12px 4px 8px;
+    border-radius: 20px;
+    font-size: 12px; font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--card);
+}
+.status-dot { width: 8px; height: 8px; border-radius: 50%; }
+.status-dot.running { background: var(--success); box-shadow: 0 0 6px rgba(16,185,129,0.4); }
+.status-dot.error { background: var(--danger); }
+.status-dot.unknown { background: var(--text-muted); }
+.btn-new-chat {
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text-secondary);
+    font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+.btn-new-chat:hover { background: var(--bg); border-color: var(--text-muted); }
+
+/* ── Health Strip ───────────────────────────────────── */
+.health-strip {
+    display: flex; gap: 2px;
+    padding: 0 24px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    height: 40px;
+    align-items: center;
+}
+.health-chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 14px;
+    font-size: 12px; font-weight: 500;
+    color: var(--text-secondary);
+    border-radius: 6px;
+    transition: background 0.15s;
+}
+.health-chip:hover { background: var(--bg); }
+.health-chip .val { color: var(--text); font-weight: 600; }
+.health-chip .sep { color: var(--border); margin: 0 4px; }
+
+/* ── Chat Container ─────────────────────────────────── */
+.chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-chat);
+}
+
+.chat-inner {
+    width: 100%;
+    padding: 0 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    flex: 1;
+}
+
+/* Welcome */
+.welcome {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 12px;
+    padding: 60px 20px;
+}
+.welcome-icon {
+    width: 56px; height: 56px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 24px;
+    box-shadow: 0 8px 24px rgba(99,102,241,0.25);
+}
+.welcome h2 { font-size: 24px; font-weight: 700; color: var(--text); }
+.welcome p { font-size: 15px; color: var(--text-secondary); max-width: 420px; line-height: 1.6; }
+.welcome.hidden { display: none; }
+
+/* ── Messages ───────────────────────────────────────── */
+.msg-row {
+    display: flex;
+    gap: 12px;
+    animation: msgIn 0.35s cubic-bezier(0.16,1,0.3,1);
+}
+@keyframes msgIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+.msg-row.user { justify-content: flex-end; }
+.msg-row.ai { justify-content: flex-start; }
+
+.msg-avatar {
+    width: 32px; height: 32px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 600;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.msg-avatar.ai-avatar {
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    color: white;
+}
+.msg-avatar.user-avatar {
+    background: linear-gradient(135deg, #0EA5E9, #38BDF8);
+    color: white;
+}
+
+.msg-bubble-user {
+    background: var(--text);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 18px 18px 4px 18px;
+    font-size: 14px;
+    max-width: 70%;
+    line-height: 1.5;
+}
+
+.msg-bubble-ai {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
+    padding: 20px 24px;
+    font-size: 14px;
+    line-height: 1.75;
+    max-width: calc(100% - 44px);
+    box-shadow: var(--shadow-sm);
+}
+
+/* AI message typography */
+.msg-bubble-ai h1 { font-size: 20px; font-weight: 700; margin: 20px 0 8px; color: var(--text); }
+.msg-bubble-ai h1:first-child { margin-top: 0; }
+.msg-bubble-ai h2 { font-size: 16px; font-weight: 700; margin: 18px 0 6px; color: var(--text); }
+.msg-bubble-ai h3 { font-size: 14px; font-weight: 600; margin: 14px 0 4px; color: var(--text); text-transform: uppercase; letter-spacing: 0.02em; }
+.msg-bubble-ai p { margin: 8px 0; color: var(--text); }
+.msg-bubble-ai ul, .msg-bubble-ai ol { margin: 8px 0 8px 20px; }
+.msg-bubble-ai li { margin: 4px 0; color: var(--text); }
+.msg-bubble-ai li::marker { color: var(--primary); }
+.msg-bubble-ai code {
+    background: var(--code-bg);
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-family: 'SF Mono', 'Fira Code', Monaco, monospace;
+    font-size: 12.5px;
+    border: 1px solid var(--border);
+    color: var(--primary-dark);
+}
+.msg-bubble-ai pre {
+    background: #0F172A;
+    color: #E2E8F0;
+    padding: 16px 20px;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    margin: 12px 0;
+    font-size: 13px;
+    line-height: 1.6;
+    border: 1px solid #1E293B;
+}
+.msg-bubble-ai pre code { background: none; padding: 0; color: inherit; font-size: inherit; border: none; }
+/* Force any inline element (em/strong/code) inside a code block to inherit the
+   bright code-block text color and reset font-style. Without this rule, an
+   <em> nested inside <pre> wins on color via same-specificity source order
+   and renders the code dim/italic against the dark background. The codeStash
+   pass in renderMarkdown already prevents this in most cases — this is the
+   defense-in-depth so a regex miss doesn't break readability. */
+.msg-bubble-ai pre *, .msg-bubble-ai pre code * {
+    color: inherit !important;
+    font-style: normal !important;
+    background: none !important;
+}
+.msg-bubble-ai strong { font-weight: 600; color: var(--text); }
+.msg-bubble-ai em { font-style: italic; color: var(--text-secondary); }
+.msg-bubble-ai blockquote {
+    border-left: 3px solid var(--primary);
+    padding: 8px 16px;
+    margin: 12px 0;
+    background: var(--bg);
+    border-radius: 0 8px 8px 0;
+    color: var(--text-secondary);
+}
+.msg-bubble-ai table { border-collapse: collapse; width: 100%; margin: 12px 0; border-radius: 8px; overflow: hidden; }
+.msg-bubble-ai th { background: var(--bg); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border); }
+.msg-bubble-ai td { padding: 10px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border-light); }
+.msg-bubble-ai tr:last-child td { border-bottom: none; }
+.msg-bubble-ai hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+/* Reasoning chain */
+.reasoning-chain {
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--bg);
+}
+.reasoning-chain summary {
+    cursor: pointer;
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    display: flex; align-items: center; gap: 8px;
+    list-style: none;
+    transition: background 0.15s;
+}
+.reasoning-chain summary::-webkit-details-marker { display: none; }
+.reasoning-chain summary::before { content: ''; width: 0; height: 0; border-left: 5px solid var(--text-muted); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform 0.2s; }
+.reasoning-chain[open] summary::before { transform: rotate(90deg); }
+.reasoning-chain summary:hover { background: var(--border-light); }
+.reasoning-chain .steps { padding: 0; list-style: none; }
+.reasoning-chain .step {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    background: var(--card);
+}
+.step-thinking { color: var(--text-muted); font-style: italic; margin-bottom: 4px; line-height: 1.5; }
+.step-tool {
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'SF Mono', 'Fira Code', Monaco, monospace;
+    font-weight: 600; font-size: 12px;
+    color: var(--text);
+}
+.step-tool .tool-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--primary); flex-shrink: 0;
+}
+.step-tool .tool-dot.error { background: var(--danger); }
+.step-result {
+    color: var(--text-muted);
+    margin-top: 4px; margin-left: 16px;
+    font-size: 11px;
+    max-height: 52px;
+    overflow: hidden;
+    line-height: 1.5;
+}
+
+.message-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-light);
+    display: flex; align-items: center; gap: 12px;
+}
+.message-meta span { display: flex; align-items: center; gap: 4px; }
+
+/* Loading */
+.msg-loading {
+    display: flex; gap: 12px;
+    animation: msgIn 0.35s cubic-bezier(0.16,1,0.3,1);
+}
+.loading-dots {
+    display: flex; gap: 4px; align-items: center;
+    padding: 16px 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+.loading-dots span {
+    width: 8px; height: 8px;
+    background: var(--primary-light);
+    border-radius: 50%;
+    animation: dotPulse 1.4s ease-in-out infinite;
+}
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotPulse { 0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
+
+/* Remediations */
+.msg-remediations { margin-top: 16px; }
+.msg-remediations h4 { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text); }
+.remediation-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.remediation-card {
+    background: var(--bg);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    transition: box-shadow 0.15s;
+}
+.remediation-card:hover { box-shadow: var(--shadow); }
+.risk-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+.risk-safe { background: var(--success-light); color: #065F46; }
+.risk-medium { background: var(--warning-light); color: #92400E; }
+.risk-manual { background: var(--danger-light); color: #991B1B; }
+.remediation-card h5 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.remediation-card p { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; line-height: 1.5; }
+.rem-actions { display: flex; gap: 6px; }
+
+/* Buttons */
+.btn {
+    padding: 7px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px; font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+.btn:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+.btn-primary { background: var(--primary); color: white; }
+.btn-primary:hover { background: var(--primary-dark); }
+.btn-success { background: var(--success); color: white; }
+.btn-outline { background: var(--card); border: 1px solid var(--border); color: var(--text-secondary); }
+.btn-outline:hover { border-color: var(--text-muted); }
+
+/* ── Input Bar ──────────────────────────────────────── */
+.input-bar {
+    flex-shrink: 0;
+    background: var(--bg-chat);
+    padding: 0 24px 16px;
+}
+.input-inner {
+    width: 100%;
+}
+.input-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--card);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 4px 6px 4px 20px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-shadow: var(--shadow-sm);
+}
+.input-box:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+}
+.input-box textarea {
+    flex: 1;
+    padding: 10px 0;
+    border: none;
+    font-size: 14px;
+    outline: none;
+    background: transparent;
+    font-family: inherit;
+    color: var(--text);
+    resize: none;
+    max-height: 150px;
+    line-height: 1.5;
+    overflow-y: auto;
+}
+.input-box textarea::placeholder { color: var(--text-muted); }
+.input-box .send-btn {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    border: none;
+    background: var(--primary);
+    color: white;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+.input-box .send-btn:hover { background: var(--primary-dark); }
+.input-box .send-btn:disabled { background: var(--border); cursor: not-allowed; }
+.input-box .send-btn svg { width: 18px; height: 18px; }
+
+.quick-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    justify-content: center;
+}
+.quick-bar button {
+    padding: 5px 14px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--card);
+    color: var(--text-secondary);
+    font-size: 12px; font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+.quick-bar button:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    box-shadow: 0 2px 8px rgba(99,102,241,0.25);
+}
+
+/* ── Diagnostics ────────────────────────────────────── */
+.diagnostics-bar {
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.diagnostics-bar details { padding: 0 40px; }
+.diagnostics-bar summary {
+    cursor: pointer;
+    font-size: 12px; font-weight: 600;
+    color: var(--text-muted);
+    padding: 10px 0;
+    list-style: none;
+    display: flex; align-items: center; gap: 6px;
+}
+.diagnostics-bar summary::-webkit-details-marker { display: none; }
+.diagnostics-bar summary::before { content: ''; width: 0; height: 0; border-left: 4px solid var(--text-muted); border-top: 3px solid transparent; border-bottom: 3px solid transparent; transition: transform 0.2s; }
+.diagnostics-bar details[open] summary::before { transform: rotate(90deg); }
+.diag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.diag-chips button {
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    font-size: 11px; font-weight: 500;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-family: inherit;
+    transition: all 0.15s;
+}
+.diag-chips button:hover { background: var(--border); }
+.diag-result {
+    background: var(--bg);
+    border-radius: var(--radius);
+    padding: 14px;
+    font-size: 12px;
+    max-height: 280px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-family: 'SF Mono', 'Fira Code', Monaco, monospace;
+    display: none;
+    margin-bottom: 10px;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+}
+.diag-result.visible { display: block; }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Spinner & Tool Progress ────────────────────────── */
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.tool-progress {
+    background: var(--code-bg);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+}
+.tool-progress:empty { display: none; }
+</style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-left">
+        <div class="header-logo">F</div>
+        <h1>Gaiger <span>/ Sidecar</span></h1>
+    </div>
+    <div class="header-right">
+        <div class="status-pill">
+            <div class="status-dot unknown" id="statusDot"></div>
+            <span id="statusText">Connecting...</span>
+        </div>
+        <button class="btn-new-chat" onclick="clearChat()">New Chat</button>
+    </div>
+</div>
+
+<div class="health-strip">
+    <div class="health-chip"><span class="val" id="hJobStatus">--</span><span class="sep">|</span><span id="hJobName" style="max-width:200px;overflow:hidden;text-overflow:ellipsis"></span></div>
+    <div class="health-chip">Checkpoints <span class="val" id="hCheckpoints">--</span></div>
+    <div class="health-chip">Operators <span class="val" id="hOperators">--</span></div>
+    <div class="health-chip">Issues <span class="val" id="hIssues">--</span></div>
+</div>
+
+<div class="chat-container" id="chatContainer">
+    <div class="chat-inner" id="chatInner">
+        <div class="welcome" id="welcome">
+            <div class="welcome-icon">&#9889;</div>
+            <h2>Gaiger</h2>
+            <p>Ask questions about your Flink job. The AI agent uses targeted tools to investigate and can modify configuration or restart your job.</p>
+        </div>
+    </div>
+</div>
+
+<div class="input-bar">
+    <div class="input-inner">
+        <div class="input-box">
+            <textarea id="queryInput" placeholder="Ask about your Flink job..." rows="1"></textarea>
+            <button class="send-btn" id="queryBtn" onclick="submitQuery()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+        </div>
+        <div class="quick-bar">
+            <button onclick="askQuestion('Run a full comprehensive analysis of my Flink job including status, checkpoints, backpressure, errors, Kubernetes events, autoscaler state, and resource usage')" style="background: linear-gradient(135deg, var(--primary), var(--primary-light)); color: white; font-weight: 600; border: none; box-shadow: 0 4px 12px rgba(99,102,241,0.3);">🔍 Full Analysis</button>
+            <button onclick="askQuestion('Find the root cause of any errors, analyze the source code, and suggest fixes. If code changes are needed, explain what to fix.')" style="background: linear-gradient(135deg, #EF4444, #F87171); color: white; font-weight: 600; border: none; box-shadow: 0 4px 12px rgba(239,68,68,0.3);">🔧 Root Cause + Fix</button>
+            <button onclick="askQuestion('What is wrong with my job?')">What's wrong?</button>
+            <button onclick="askQuestion('Show me autoscaling history')">Autoscaling</button>
+            <button onclick="askQuestion('Analyze checkpoint performance')">Checkpoints</button>
+            <button onclick="askQuestion('Is there backpressure?')">Backpressure</button>
+            <button onclick="askQuestion('Check for data skewness')">Data Skew</button>
+            <button onclick="askQuestion('Show me recent errors')">Errors</button>
+            <button onclick="askQuestion('Check for pod restarts and Kubernetes events')">K8s Events</button>
+            <button onclick="askQuestion('Show me full config')">Config</button>
+            <button onclick="askQuestion('Show operator logs')">Operator Logs</button>
+            <button onclick="askQuestion('Send job status summary to Slack channel #my-team-alerts')">📤 Send to Slack</button>
+        </div>
+    </div>
+</div>
+
+<div class="diagnostics-bar">
+    <details>
+        <summary>Manual Diagnostics</summary>
+        <div class="diag-chips">
+            <button onclick="showPendingApprovals(true)">Pending Approvals</button>
+            <button onclick="runDiagnostic('full')">Full Diagnostics</button>
+            <button onclick="runDiagnostic('thread-dump')">Thread Dumps</button>
+            <button onclick="runDiagnostic('skewness')">Skewness</button>
+            <button onclick="runDiagnostic('autoscaler-events')">Autoscaler Events</button>
+            <button onclick="runDiagnostic('autoscaler-errors')">Autoscaler Errors</button>
+            <button onclick="runDiagnostic('logs-jm')">JM Logs</button>
+            <button onclick="runDiagnostic('logs-tm')">TM Logs</button>
+            <button onclick="runDiagnostic('logs-operator')">Operator Logs</button>
+        </div>
+        <div class="diag-result" id="diagResult"></div>
+    </details>
+</div>
+
+<script>
+let conversationHistory = [];
+
+// Server-side total context budget (question + every history content), mirrored
+// from TOTAL_CONTEXT_BUDGET_CHARS in app/main.py — a test locks the two values
+// together. The server drops the oldest history entries to fit; trimming here
+// first keeps the request honest about what the model will actually see and
+// stops the stored history from growing without bound.
+const TOTAL_CONTEXT_BUDGET_CHARS = 30000;
+const MAX_HISTORY_MESSAGES = 20;
+
+// Trim conversationHistory in place (oldest first) so the next request fits the
+// server's entry cap and total budget, then return it for the request body.
+function trimHistoryForRequest(question) {
+    if (conversationHistory.length > MAX_HISTORY_MESSAGES) {
+        conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES);
+    }
+    let total = question.length + conversationHistory.reduce((n, m) => n + m.content.length, 0);
+    while (total > TOTAL_CONTEXT_BUDGET_CHARS && conversationHistory.length) {
+        total -= conversationHistory[0].content.length;
+        conversationHistory.shift();
+    }
+    return conversationHistory;
+}
+
+// ── Health ──────────────────────────────────────────────────────
+async function refreshHealth() {
+    try {
+        const resp = await fetch('api/job/status');
+        const data = await resp.json();
+        const status = data.status || 'UNKNOWN';
+
+        const dot = document.getElementById('statusDot');
+        dot.className = 'status-dot ' + (status === 'RUNNING' ? 'running' : status === 'FAILED' ? 'error' : 'unknown');
+        document.getElementById('statusText').textContent = status;
+        document.getElementById('hJobStatus').textContent = status;
+        document.getElementById('hJobName').textContent = data.name || '';
+
+        const cp = data.checkpoints || {};
+        document.getElementById('hCheckpoints').textContent = cp.status === 'healthy' ? 'OK' : cp.status === 'unhealthy' ? 'WARN' : '--';
+        document.getElementById('hOperators').textContent = (data.vertices || []).length;
+
+        const issues = cp.issues || [];
+        const issueEl = document.getElementById('hIssues');
+        issueEl.textContent = issues.length;
+        issueEl.style.color = issues.length > 0 ? 'var(--danger)' : 'var(--success)';
+    } catch (e) {
+        document.getElementById('statusDot').className = 'status-dot error';
+        document.getElementById('statusText').textContent = 'Disconnected';
+    }
+}
+
+// ── Chat ────────────────────────────────────────────────────────
+function scrollToBottom() {
+    const c = document.getElementById('chatContainer');
+    c.scrollTop = c.scrollHeight;
+}
+
+function addUserMessage(text) {
+    document.getElementById('welcome').classList.add('hidden');
+    const inner = document.getElementById('chatInner');
+    const row = document.createElement('div');
+    row.className = 'msg-row user';
+    row.innerHTML = `<div class="msg-bubble-user">${escapeHtml(text)}</div><div class="msg-avatar user-avatar">U</div>`;
+    inner.appendChild(row);
+    scrollToBottom();
+}
+
+function addLoadingMessage() {
+    const inner = document.getElementById('chatInner');
+    const row = document.createElement('div');
+    row.className = 'msg-loading';
+    row.id = 'loadingMsg';
+    row.innerHTML = `<div class="msg-avatar ai-avatar">AI</div><div class="loading-dots"><span></span><span></span><span></span></div>`;
+    inner.appendChild(row);
+    scrollToBottom();
+}
+
+function removeLoadingMessage() { const el = document.getElementById('loadingMsg'); if (el) el.remove(); }
+
+// Persistent AI message shell: the reasoning chain fills live from tool events,
+// the live-answer div streams tokens, and finalizeAIMessage enriches in place —
+// the streamed transcript IS the message that persists (no throwaway progress row).
+function addAIMessageShell() {
+    const inner = document.getElementById('chatInner');
+    const row = document.createElement('div');
+    row.className = 'msg-row ai';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'msg-avatar ai-avatar';
+    avatar.textContent = 'AI';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-bubble-ai';
+    bubble.style.minHeight = '60px';
+
+    const reasoning = document.createElement('details');
+    reasoning.className = 'reasoning-chain';
+    reasoning.open = true;
+    const reasoningSummary = document.createElement('summary');
+    reasoningSummary.textContent = 'Working...';
+    const toolProgress = document.createElement('div');
+    toolProgress.className = 'tool-progress';
+    reasoning.appendChild(reasoningSummary);
+    reasoning.appendChild(toolProgress);
+
+    const liveAnswer = document.createElement('div');
+    liveAnswer.style.whiteSpace = 'pre-wrap'; // plain text while streaming; markdown render replaces it on result
+
+    const statusLine = document.createElement('div');
+    statusLine.innerHTML = '<div class="spinner" style="margin:12px 0"></div><p style="font-size:13px;color:var(--text-muted)">Analyzing...</p>'; // static markup only
+
+    bubble.appendChild(reasoning);
+    bubble.appendChild(liveAnswer);
+    bubble.appendChild(statusLine);
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+    inner.appendChild(row);
+    scrollToBottom();
+    return { row, bubble, reasoning, reasoningSummary, toolProgress, liveAnswer, statusLine };
+}
+
+const THINKING_STYLE = 'font-size:13px;color:var(--text-secondary);margin:6px 0;padding:8px 12px;background:rgba(0,0,0,0.02);border-left:2px dashed #888;border-radius:3px;font-style:italic;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto';
+
+function settleReasoning(ui, toolsUsed) {
+    if (!ui.toolProgress.childNodes.length) {
+        ui.reasoning.remove();
+        return;
+    }
+    ui.reasoningSummary.textContent = toolsUsed.length === 0
+        ? 'Reasoning'
+        : toolsUsed.length === 1
+            ? `Used ${toolsUsed[0]}`
+            : `Used ${toolsUsed.length} tools: ${toolsUsed.join(' → ')}`;
+    ui.reasoning.open = false;
+}
+
+// What the assistant turn contributes to the next request's history. An answer the
+// server redacted or withheld (prompt-leakage tripwire, result.leakage) is NOT
+// replayed: re-feeding the redaction markers tells the model which spans tripped
+// the filter. The redaction markers themselves are removed (substring, not whole
+// lines — a one-paragraph answer must not collapse to the placeholder) and the rest
+// is kept; a withheld answer is replaced by a neutral placeholder. The server applies
+// the same rule to history it receives, this just keeps the honest client from
+// sending it in the first place.
+function historySafeAnswer(result) {
+    const answer = result.answer || '';
+    const leak = result.leakage || {};
+    if (leak.withheld) return '[previous answer withheld by the output filter]';
+    if (!leak.redacted_spans) return answer;
+    const kept = answer.replace(/\[redacted:[^\]]*\]/g, '').trim();
+    return kept || '[previous answer redacted by the output filter]';
+}
+
+function finalizeAIMessage(ui, data, toolsUsed) {
+    ui.statusLine.remove();
+    settleReasoning(ui, toolsUsed);
+    // Sanctioned innerHTML path: renderMarkdown escapes its input before applying markup.
+    ui.liveAnswer.style.whiteSpace = '';
+    ui.liveAnswer.innerHTML = renderMarkdown(data.answer || 'No analysis available');
+    if (data.remediations && data.remediations.length > 0) {
+        ui.bubble.appendChild(buildRemediationsElement(data.remediations));
+    }
+    if (Array.isArray(data.pending_actions) && data.pending_actions.length > 0) {
+        ui.bubble.appendChild(buildPendingActionsElement(data.pending_actions));
+    }
+    const meta = document.createElement('div');
+    meta.className = 'message-meta';
+    const tools = document.createElement('span');
+    tools.textContent = `Tools: ${data.tool_calls_made || 0}`;
+    const iters = document.createElement('span');
+    iters.textContent = `Iterations: ${data.iterations || 0}`;
+    meta.appendChild(tools);
+    meta.appendChild(iters);
+    ui.bubble.appendChild(meta);
+    scrollToBottom();
+}
+
+// Tool cards are built with createElement/textContent only — event-derived
+// strings never reach innerHTML.
+function renderToolStart(toolProgress, event) {
+    const item = document.createElement('div');
+    item.style.cssText = 'font-size:13px;color:var(--text-secondary);margin:6px 0;padding:6px 10px;background:rgba(0,0,0,0.03);border-left:3px solid #4a90e2;border-radius:3px;display:flex;align-items:flex-start;gap:8px';
+    const spin = document.createElement('div');
+    spin.className = 'spinner';
+    spin.style.cssText = 'width:14px;height:14px;flex-shrink:0;margin-top:2px';
+    const label = document.createElement('div');
+    label.style.cssText = 'min-width:0;flex:1';
+    const name = document.createElement('strong');
+    name.textContent = `${event.tool_name}()`;
+    label.appendChild(name);
+    const argText = toolArgPreview(event.tool_input);
+    if (argText) {
+        const args = document.createElement('span');
+        args.style.cssText = 'color:var(--text-muted);font-size:11px;font-family:monospace';
+        args.textContent = ` (${argText})`;
+        label.appendChild(args);
+    }
+    item.appendChild(spin);
+    item.appendChild(label);
+    toolProgress.appendChild(item);
+    return item;
+}
+
+function toolArgPreview(toolInput) {
+    // tool_input is a summarized args object ({name: "<N chars>"}), or a string
+    // (the server's redaction marker) when the server suppressed the payload.
+    if (typeof toolInput === 'string') return toolInput.length > 60 ? toolInput.substring(0, 57) + '...' : toolInput;
+    if (!toolInput || typeof toolInput !== 'object') return '';
+    const entries = Object.entries(toolInput).slice(0, 3);
+    if (!entries.length) return '';
+    return entries.map(([k, v]) => {
+        let display = typeof v === 'string' ? v : JSON.stringify(v);
+        if (display.length > 60) display = display.substring(0, 57) + '...';
+        return `${k}=${display}`;
+    }).join(', ');
+}
+
+function renderToolEnd(item, event) {
+    item.style.borderLeftColor = '#4caf50';
+    item.textContent = '';
+    const check = document.createElement('span');
+    check.style.cssText = 'color:var(--success);flex-shrink:0;margin-top:2px';
+    check.textContent = '✓';
+    const label = document.createElement('div');
+    label.style.cssText = 'min-width:0;flex:1';
+    const name = document.createElement('strong');
+    name.textContent = `${event.tool_name}()`;
+    label.appendChild(name);
+    const detail = document.createElement('span');
+    if (event.output_preview && event.output_preview.length) {
+        detail.style.cssText = 'color:var(--text-muted);font-size:11px;font-family:monospace';
+        detail.textContent = ` → ${event.output_preview.substring(0, 80)}${event.output_preview.length > 80 ? '...' : ''}`;
+    } else {
+        detail.style.cssText = 'color:var(--text-muted);font-size:11px';
+        detail.textContent = ` (${event.output_size} chars)`;
+    }
+    label.appendChild(detail);
+    item.appendChild(check);
+    item.appendChild(label);
+}
+
+// ── Query ───────────────────────────────────────────────────────
+function askQuestion(q) { document.getElementById('queryInput').value = q; submitQuery(); }
+
+async function submitQuery() {
+    const input = document.getElementById('queryInput');
+    const btn = document.getElementById('queryBtn');
+    const question = input.value.trim();
+    if (!question) return;
+
+    btn.disabled = true;
+    input.value = '';
+    addUserMessage(question);
+
+    const ui = addAIMessageShell();
+    const toolsUsed = [];
+    const toolItems = {}; // tool_number → card element (scoped per query — DOM ids would collide across turns)
+    let currentSegment = 0;
+    let sawError = false;
+
+    // Text streamed before a tool batch is intermediate thinking — fold it into
+    // the reasoning chain and restart the live answer for the next segment.
+    function migrateLiveAnswer() {
+        const text = ui.liveAnswer.textContent;
+        ui.liveAnswer.textContent = '';
+        if (!text.trim()) return;
+        const think = document.createElement('div');
+        think.style.cssText = THINKING_STYLE;
+        think.textContent = text;
+        ui.toolProgress.appendChild(think);
+    }
+
+    // Errors annotate the same bubble — streamed content is never discarded.
+    function showStreamError(message) {
+        ui.statusLine.remove();
+        const p = document.createElement('p');
+        p.style.color = 'var(--danger)';
+        p.textContent = 'Error: ' + message;
+        ui.bubble.appendChild(p);
+        scrollToBottom();
+    }
+
+    try {
+        const resp = await fetch('api/query/stream', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ question, history: trimHistoryForRequest(question) }),
+        });
+
+        // A non-2xx (422 validation, 429 load-shed, 5xx) carries a JSON body, not
+        // an SSE stream: surface it as an error instead of parsing nothing and
+        // reporting "Stream interrupted".
+        if (!resp.ok) {
+            let detail = '';
+            try {
+                const body = await resp.json();
+                if (body && typeof body.detail === 'string') detail = body.detail;
+            } catch (parseErr) { /* body was not JSON — status alone is the message */ }
+            showStreamError(`Request failed (HTTP ${resp.status})${detail ? ': ' + detail : ''}`);
+            settleReasoning(ui, toolsUsed);
+            return;
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let finalResult = null;
+
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, {stream: true});
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Keep incomplete line in buffer
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                let event;
+                try {
+                    event = JSON.parse(line.substring(6));
+                } catch (parseErr) {
+                    console.warn('Failed to parse SSE event:', parseErr);
+                    continue;
+                }
+
+                if (event.type === 'tool_start') {
+                    migrateLiveAnswer();
+                    toolsUsed.push(event.tool_name);
+                    toolItems[event.tool_number] = renderToolStart(ui.toolProgress, event);
+                    scrollToBottom();
+                } else if (event.type === 'tool_end') {
+                    const item = toolItems[event.tool_number];
+                    if (item) renderToolEnd(item, event);
+                } else if (event.type === 'content_chunk') {
+                    // event.content is either a string OR an Anthropic structured-block array.
+                    // Only render text-type blocks; tool_use / input_json_delta / image blocks
+                    // are either redundant (we already show tool cards) or noise (raw JSON deltas).
+                    let text = '';
+                    if (typeof event.content === 'string') {
+                        text = event.content;
+                    } else if (Array.isArray(event.content)) {
+                        text = event.content
+                            .map(b => {
+                                if (typeof b === 'string') return b;
+                                if (b && b.type === 'text' && typeof b.text === 'string') return b.text;
+                                return '';
+                            })
+                            .join('');
+                    }
+                    if (text) {
+                        if (typeof event.segment === 'number' && event.segment !== currentSegment) {
+                            migrateLiveAnswer(); // belt-and-braces: tool_start usually migrated already
+                            currentSegment = event.segment;
+                        }
+                        ui.liveAnswer.textContent += text;
+                        scrollToBottom();
+                    }
+                } else if (event.type === 'result') {
+                    finalResult = event.data;
+                } else if (event.type === 'error') {
+                    sawError = true;
+                    showStreamError(event.error || 'Analysis failed — please try again.');
+                }
+            }
+        }
+
+        if (finalResult) {
+            finalizeAIMessage(ui, finalResult, toolsUsed);
+            conversationHistory.push({role: 'user', content: question});
+            conversationHistory.push({role: 'assistant', content: historySafeAnswer(finalResult)});
+            if (conversationHistory.length > MAX_HISTORY_MESSAGES) conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES);
+        } else {
+            settleReasoning(ui, toolsUsed);
+            if (!sawError) {
+                // Connection dropped before the result event: keep what streamed.
+                ui.statusLine.remove();
+                const note = document.createElement('p');
+                note.style.cssText = 'font-size:12px;color:var(--text-muted);font-style:italic';
+                note.textContent = 'Stream interrupted — showing partial output.';
+                ui.bubble.appendChild(note);
+            }
+        }
+    } catch (e) {
+        showStreamError(e.message);
+        settleReasoning(ui, toolsUsed);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function clearChat() {
+    conversationHistory = [];
+    document.getElementById('chatInner').innerHTML = `
+        <div class="welcome" id="welcome">
+            <div class="welcome-icon">&#9889;</div>
+            <h2>Gaiger</h2>
+            <p>Ask questions about your Flink job. The AI agent uses targeted tools to investigate and can modify configuration or restart your job.</p>
+        </div>`;
+}
+
+
+// ── Remediations ────────────────────────────────────────────────
+// risk_level lands in a class name: allowlist it instead of escaping (escapeHtml is
+// quote-blind, so it is never attribute-safe). Everything else is set via
+// textContent, and Apply/Dry Run use addEventListener closures — rem.type never
+// enters an onclick attribute, so there is no JS-in-attribute context to escape.
+const REMEDIATION_RISK_LEVELS = ['safe', 'medium', 'manual'];
+
+function buildRemediationsElement(remediations) {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg-remediations';
+    const heading = document.createElement('h4');
+    heading.textContent = 'Recommended Fixes';
+    wrap.appendChild(heading);
+    const cards = document.createElement('div');
+    cards.className = 'remediation-cards';
+    wrap.appendChild(cards);
+
+    for (const rem of remediations) {
+        const risk = REMEDIATION_RISK_LEVELS.includes(rem.risk_level) ? rem.risk_level : 'safe';
+        const card = document.createElement('div');
+        card.className = 'remediation-card';
+
+        const badge = document.createElement('span');
+        badge.className = 'risk-badge risk-' + risk;
+        badge.textContent = risk;
+        card.appendChild(badge);
+
+        const title = document.createElement('h5');
+        title.textContent = rem.type || 'Fix';
+        card.appendChild(title);
+
+        const desc = document.createElement('p');
+        desc.textContent = rem.description || '';
+        card.appendChild(desc);
+
+        const actions = document.createElement('div');
+        actions.className = 'rem-actions';
+        if (rem.auto_applicable) {
+            const apply = document.createElement('button');
+            apply.className = 'btn btn-success';
+            apply.style.cssText = 'font-size:12px;padding:5px 12px';
+            apply.textContent = 'Apply';
+            apply.addEventListener('click', () => applyRemediationViaChat(rem.type));
+            actions.appendChild(apply);
+
+            const dryRun = document.createElement('button');
+            dryRun.className = 'btn btn-outline';
+            dryRun.style.cssText = 'font-size:12px;padding:5px 12px';
+            dryRun.textContent = 'Dry Run';
+            dryRun.addEventListener('click', () => applyRemediationViaChat(rem.type, true));
+            actions.appendChild(dryRun);
+        } else {
+            const manual = document.createElement('span');
+            manual.style.cssText = 'font-size:12px;color:var(--text-muted)';
+            manual.textContent = 'Manual fix required';
+            actions.appendChild(manual);
+        }
+        card.appendChild(actions);
+        cards.appendChild(card);
+    }
+    return wrap;
+}
+
+// Writes the agent proposed (cluster changes, pull requests). Nothing changes
+// until a person clicks Approve; the proposal id comes from the server's result
+// event or GET api/remediation/pending and is single use. Built with
+// createElement/textContent only.
+function buildPendingActionsElement(actions) {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg-remediations';
+    const heading = document.createElement('h4');
+    heading.textContent = 'Awaiting your approval';
+    wrap.appendChild(heading);
+    for (const act of actions) {
+        const card = document.createElement('div');
+        card.className = 'remediation-card';
+        const title = document.createElement('h5');
+        title.textContent = act.summary || act.action || 'Proposed change';
+        card.appendChild(title);
+        if (act.detail) {
+            const more = document.createElement('details');
+            const sum = document.createElement('summary');
+            sum.textContent = 'Show the proposed change';
+            const pre = document.createElement('pre');
+            pre.style.cssText = 'max-height:320px;overflow:auto;white-space:pre-wrap;font-size:12px';
+            pre.textContent = String(act.detail);
+            more.appendChild(sum);
+            more.appendChild(pre);
+            card.appendChild(more);
+        }
+        const status = document.createElement('p');
+        status.textContent = 'Not applied. Expires in ' + Math.round((act.expires_in_seconds || 600) / 60) + ' min.';
+        card.appendChild(status);
+        const row = document.createElement('div');
+        row.className = 'rem-actions';
+        const approve = document.createElement('button');
+        approve.className = 'btn btn-success';
+        approve.style.cssText = 'font-size:12px;padding:5px 12px';
+        approve.textContent = 'Approve';
+        const reject = document.createElement('button');
+        reject.className = 'btn btn-outline';
+        reject.style.cssText = 'font-size:12px;padding:5px 12px';
+        reject.textContent = 'Reject';
+        const decide = async (verb) => {
+            approve.disabled = true;
+            reject.disabled = true;
+            try {
+                const resp = await fetch('api/remediation/' + verb, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({proposal_id: String(act.proposal_id || '')}),
+                });
+                const body = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    status.textContent = 'Not done: ' + (body.detail || ('HTTP ' + resp.status));
+                } else if (verb === 'reject') {
+                    status.textContent = 'Rejected. Nothing was changed.';
+                } else {
+                    status.textContent = body.success ? 'Approved and applied.' : ('Approved, but it failed: ' + (body.message || body.error || 'see logs'));
+                }
+            } catch (e) {
+                status.textContent = 'Request failed: ' + e.message;
+            }
+        };
+        approve.addEventListener('click', () => {
+            const q = act.action === 'create_github_pr' ? 'Open this pull request now?' : 'Apply this change to the cluster now?';
+            if (confirm(q + '\n\n' + title.textContent)) decide('approve');
+        });
+        reject.addEventListener('click', () => decide('reject'));
+        row.appendChild(approve);
+        row.appendChild(reject);
+        card.appendChild(row);
+        wrap.appendChild(card);
+    }
+    return wrap;
+}
+
+// New approach: Apply remediation via chat message to the AI agent
+function applyRemediationViaChat(type, dryRun = false) {
+    if (!dryRun && !confirm(`Apply "${type}"? A savepoint will be created first.`)) return;
+
+    // Format a friendly remediation type name
+    const friendlyName = type.replace(/_/g, ' ');
+
+    // Construct the chat message
+    const message = dryRun
+        ? `Run a dry-run for the ${friendlyName} fix`
+        : `Apply the ${friendlyName} fix`;
+
+    // Send it as a regular chat message
+    document.getElementById('queryInput').value = message;
+    submitQuery();
+}
+
+// ── Diagnostics ─────────────────────────────────────────────────
+async function runDiagnostic(type) {
+    const el = document.getElementById('diagResult');
+    el.classList.add('visible');
+    el.textContent = 'Loading...';
+    const endpoints = { 'full':'api/diagnostics/full','thread-dump':'api/diagnostics/thread-dump','skewness':'api/diagnostics/skewness','autoscaler-events':'api/autoscaler/events','autoscaler-errors':'api/autoscaler/errors','logs-jm':'api/logs/jobmanager','logs-tm':'api/logs/taskmanager','logs-operator':'api/logs/operator' };
+    const method = ['thread-dump','skewness'].includes(type) ? 'POST' : 'GET';
+    // The server refuses POSTs that are not application/json (cross-site guard).
+    const headers = method === 'POST' ? {'Content-Type': 'application/json'} : {};
+    try {
+        const resp = await fetch(endpoints[type], {method, headers});
+        el.textContent = JSON.stringify(await resp.json(), null, 2);
+    } catch (e) { el.textContent = 'Error: ' + e.message; }
+}
+
+// ── Markdown ────────────────────────────────────────────────────
+// Escape-then-markup, not a sanitizer: XSS-safety holds only because every
+// rule below emits fixed element-content markup with NO attributes and NO
+// URLs. Do not add autolinking or any attribute-producing rule here — that
+// would reopen an injection surface escapeHtml cannot cover.
+function renderMarkdown(text) {
+    if (!text) return '';
+    let h = escapeHtml(text);
+    const codeStash = [];
+    const stashTok = i => '\x01cb' + i + '\x01';  // SOH control char — won't appear in model output
+    h = h.replace(/```(\w*)\n([\s\S]*?)```/g, (_, l, c) => {
+        codeStash.push('<pre><code>' + c.replace(/^\n|\n$/g, '') + '</code></pre>');
+        return stashTok(codeStash.length - 1);
+    });
+    h = h.replace(/`([^`]+)`/g, (_, c) => {
+        codeStash.push('<code>' + c + '</code>');
+        return stashTok(codeStash.length - 1);
+    });
+    h = h.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    h = h.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    h = h.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    h = h.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    h = h.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+    h = h.replace(/^---$/gm, '<hr>');
+    h = h.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+    h = h.replace(/((?:<li>[\s\S]*?<\/li>\s*)+)/g, '<ul>$1</ul>');
+    h = h.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+    h = h.replace(/^(\|.+\|)\n(\|[\-\| :]+\|)\n((?:\|.+\|\n?)+)/gm, (_, hdr, sep, body) => {
+        const ths = hdr.split('|').filter(c=>c.trim()).map(c=>'<th>'+c.trim()+'</th>').join('');
+        const rows = body.trim().split('\n').map(r => '<tr>' + r.split('|').filter(c=>c.trim()).map(c=>'<td>'+c.trim()+'</td>').join('') + '</tr>').join('');
+        return '<table><thead><tr>'+ths+'</tr></thead><tbody>'+rows+'</tbody></table>';
+    });
+    // Restore stashed code blocks BEFORE paragraph wrap so <pre> lines stay block-level
+    // and inline <code> stays inside <p> with its surrounding text.
+    h = h.replace(/\x01cb(\d+)\x01/g, (_, i) => codeStash[parseInt(i, 10)]);
+    h = h.split('\n\n').map(b => { b = b.trim(); if (!b) return ''; if (/^<[a-z]/.test(b)) return b; return '<p>' + b.replace(/\n/g, '<br>') + '</p>'; }).join('\n');
+    h = h.replace(/<p><\/p>/g, '');
+    return h;
+}
+
+// Explicit replacement escaping, quote-safe (the textContent/innerHTML round-trip
+// leaves " and ' unescaped, so it is never attribute-safe). & must be replaced
+// FIRST or the later entities would be double-escaped.
+function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Proposals not tied to this chat (alert-triggered runs). Silent on page load
+// when there are none or writes are disabled; explicit from the button.
+async function showPendingApprovals(explicit) {
+    let body = {};
+    try {
+        const resp = await fetch('api/remediation/pending');
+        if (!resp.ok) { if (explicit) alert('Pending approvals unavailable (HTTP ' + resp.status + ')'); return; }
+        body = await resp.json();
+    } catch (e) { if (explicit) alert('Request failed: ' + e.message); return; }
+    const items = Array.isArray(body.pending) ? body.pending : [];
+    if (items.length === 0) { if (explicit) alert('Nothing is awaiting approval.'); return; }
+    document.getElementById('welcome').classList.add('hidden');
+    const row = document.createElement('div');
+    row.className = 'msg-row ai';
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-bubble-ai';
+    bubble.appendChild(buildPendingActionsElement(items));
+    row.appendChild(bubble);
+    document.getElementById('chatInner').appendChild(row);
+    scrollToBottom();
+}
+
+// ── Init ────────────────────────────────────────────────────────
+showPendingApprovals(false);
+refreshHealth();
+setInterval(refreshHealth, 15000);
+document.getElementById('queryInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitQuery(); }
+});
+document.getElementById('queryInput').addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+});
+</script>
+</body>
+</html>

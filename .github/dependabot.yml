@@ -1,0 +1,31 @@
+# Copyright Yahoo, Licensed under the terms of the Apache 2.0 license. See LICENSE for terms.
+
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      time: "04:00"
+      day: tuesday
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      time: "04:00"
+      day: tuesday
+    allow:
+      - dependency-type: all
+    ignore:   # requirements.txt: the OpenTelemetry 1.41 / 0.62b0 train breaks openinference
+      - dependency-name: "opentelemetry-sdk"
+        versions: [">=1.41.0"]
+      - dependency-name: "opentelemetry-exporter-otlp-proto-grpc"
+        versions: [">=1.41.0"]
+      - dependency-name: "opentelemetry-instrumentation*"
+        versions: [">=0.62b0"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      time: "04:00"
+      day: tuesday
