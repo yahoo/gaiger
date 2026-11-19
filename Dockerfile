@@ -1,7 +1,7 @@
 # Copyright Yahoo, Licensed under the terms of the Apache 2.0 license. See LICENSE for terms.
 
 # Base image pinned by digest (python:3.12-slim); Dependabot's docker entry keeps it current.
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 # Fail the build if the interpreter is not the version the docs assert (3.12).
 RUN python3.12 -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
