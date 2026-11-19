@@ -27,7 +27,7 @@ oauthlib>=4.0.1
 # wrap_function_wrapper() signature, which breaks the openinference LangChain instrumentor at
 # load time ("unexpected keyword argument 'module'" — caught in live validation). openinference
 # leaves opentelemetry-instrumentation unpinned, so cap the whole stack on the pre-break train.
-opentelemetry-sdk>=1.31.0,<1.41.0
+opentelemetry-sdk>=1.40.0,<1.41.0
 opentelemetry-exporter-otlp-proto-grpc>=1.31.0,<1.41.0
 opentelemetry-instrumentation>=0.52b0,<0.62b0
 opentelemetry-instrumentation-fastapi>=0.52b0,<0.62b0
